@@ -1,0 +1,135 @@
+# MazeVault — Customer Production Compose (HTTPS-first)
+# ─────────────────────────────────────────────────────────
+# Parametrized via .env — supports GHCR, Nexus, Harbor, offline load
+#
+# Quick start:
+#   cp .env.example .env    # edit secrets
+#   docker compose up -d
+#
+# Custom TLS: place server.crt + server.key in ./certs/
+# ─────────────────────────────────────────────────────────
+
+services:
+  # ── TLS Certificate Init ─────────────────────────────────
+  init-certs:
+    image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-init-certs:${IMAGE_TAG:-latest}
+    volumes:
+      - certs:/certs
+      - ${CUSTOM_CERT_DIR:-./certs}:/custom-certs:ro
+    environment:
+      MAZEVAULT_TLS_SKIP_INIT: ${MAZEVAULT_TLS_SKIP_INIT:-false}
+      MAZEVAULT_DOMAIN: ${MAZEVAULT_DOMAIN:-localhost}
+    restart: "no"
+
+  # ── PostgreSQL ───────────────────────────────────────────
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:15-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mazevault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-mazevault}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mazevault}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+      --maxmemory ${REDIS_MAX_MEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── Backend (Go API) ────────────────────────────────────
+  backend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgres://${POSTGRES_USER:-mazevault}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mazevault}?sslmode=disable
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Secrets
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET required}
+      # TLS
+      TLS_CERT: /certs/server.crt
+      TLS_KEY: /certs/server.key
+      # Application
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://localhost}
+    volumes:
+      - certs:/certs:ro
+      - backend_data:/app/data
+    ports:
+      - "${BACKEND_PORT:-8443}:8443"
+    networks:
+      - internal
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: ${BACKEND_MEMORY_LIMIT:-1g}
+
+  # ── Frontend (nginx + React) ─────────────────────────────
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+    volumes:
+      - certs:/etc/nginx/certs:ro
+    ports:
+      - "${FRONTEND_PORT:-443}:443"
+      - "${FRONTEND_HTTP_PORT:-80}:80"
+    networks:
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256m}
+
+volumes:
+  certs:
+    driver: local
+  pgdata:
+    driver: local
+  backend_data:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+    internal: true   # No external access
+  frontend:
+    driver: bridge
