@@ -182,9 +182,9 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      JWT_SECRET: ${JWT_SECRET}
-      MASTER_KEY: ${MASTER_KEY}
-      SESSION_SECRET: ${SESSION_SECRET}
+      MAZEVAULT_JWT_KEY: ${JWT_SECRET}
+      MAZEVAULT_MASTER_KEY: ${MASTER_KEY}
+      MAZEVAULT_SESSION_SECRET: ${SESSION_SECRET}
       TLS_CERT: /certs/server.crt
       TLS_KEY: /certs/server.key
     volumes:
