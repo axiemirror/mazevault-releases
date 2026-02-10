@@ -67,7 +67,22 @@ chmod 700 "${INSTALL_DIR}/certs" "${INSTALL_DIR}/data"
 generate_secret() { openssl rand -base64 "$1" 2>/dev/null | tr -d '\n/+='; }
 
 ENV_FILE="${INSTALL_DIR}/.env"
-if [[ ! -f "${ENV_FILE}" ]]; then
+if [[ -f "${ENV_FILE}" ]]; then
+  info ".env already exists — updating version to ${VERSION}..."
+  # Update IMAGE_TAG and IMAGE_REGISTRY in existing .env
+  if grep -q "IMAGE_TAG=" "${ENV_FILE}"; then
+    sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${VERSION}|" "${ENV_FILE}"
+  else
+    echo "IMAGE_TAG=${VERSION}" >> "${ENV_FILE}"
+  fi
+  
+  if grep -q "IMAGE_REGISTRY=" "${ENV_FILE}"; then
+    sed -i "s|IMAGE_REGISTRY=.*|IMAGE_REGISTRY=${REGISTRY}|" "${ENV_FILE}"
+  else
+    echo "IMAGE_REGISTRY=${REGISTRY}" >> "${ENV_FILE}"
+  fi
+  ok "Updated .env with version ${VERSION}"
+else
   info "Generating secrets and .env file..."
   cat > "${ENV_FILE}" <<ENVEOF
 # ── MazeVault Configuration ─────────────────────────────────
@@ -105,8 +120,6 @@ BACKEND_PORT=8443
 ENVEOF
   chmod 600 "${ENV_FILE}"
   ok "Generated ${ENV_FILE}"
-else
-  warn ".env already exists — skipping secret generation"
 fi
 
 # ── Write docker-compose.yml ────────────────────────────────────────────────
