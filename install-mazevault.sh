@@ -18,8 +18,10 @@ while [[ $# -gt 0 ]]; do
     --version)  VERSION="$2"; shift 2 ;;
     --registry) REGISTRY="$2"; shift 2 ;;
     --dir)      INSTALL_DIR="$2"; shift 2 ;;
+    --user)     GITHUB_USER="$2"; shift 2 ;;
+    --token)    GITHUB_TOKEN="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: $0 [--version TAG] [--registry REGISTRY] [--dir PATH]"
+      echo "Usage: $0 [--version TAG] [--registry REGISTRY] [--dir PATH] [--user USERNAME] [--token TOKEN]"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -213,10 +215,21 @@ ok "Compose file written"
 info "Pulling images from ${REGISTRY}..."
 cd "${INSTALL_DIR}"
 
+# Try to login if credentials are provided
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  if [[ -z "${GITHUB_USER:-}" ]]; then
+    warn "GITHUB_TOKEN is set but --user is missing. Cannot auto-login."
+    warn "Please run: echo \$GITHUB_TOKEN | $RUNTIME login $REGISTRY -u YOUR_USERNAME --password-stdin"
+  else
+    info "Logging in to $REGISTRY as $GITHUB_USER..."
+    echo "$GITHUB_TOKEN" | $RUNTIME login "$REGISTRY" -u "$GITHUB_USER" --password-stdin || warn "Login failed, continuing..."
+  fi
+fi
+
 # Export vars for compose
 set -a; source "${ENV_FILE}"; set +a
 
-${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" pull || die "Failed to pull images"
+${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" pull || die "Failed to pull images. If using private registry, ensure you are logged in."
 ok "All images pulled"
 
 # ── Start services ──────────────────────────────────────────────────────────
