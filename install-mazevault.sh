@@ -202,6 +202,8 @@ services:
         condition: service_started
     volumes:
       - certs:/etc/nginx/certs:ro
+    environment:
+      - BACKEND_HOST=backend
     ports:
       - "${FRONTEND_PORT:-443}:443"
 
