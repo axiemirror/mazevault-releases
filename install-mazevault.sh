@@ -140,6 +140,11 @@ services:
     environment:
       - MAZEVAULT_TLS_SKIP_INIT=\${MAZEVAULT_TLS_SKIP_INIT:-false}
       - MAZEVAULT_DOMAIN=\${MAZEVAULT_DOMAIN:-localhost}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   postgres:
     image: postgres:15-alpine
@@ -155,6 +160,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
@@ -169,6 +179,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     image: \${IMAGE_REGISTRY}/mazevault-backend:\${IMAGE_TAG}
@@ -192,6 +207,17 @@ services:
       - certs:/certs:ro
     ports:
       - "\${BACKEND_PORT:-8443}:8443"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8443/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   ocsp:
     image: \${IMAGE_REGISTRY}/mazevault-ocsp:\${IMAGE_TAG}
@@ -207,12 +233,22 @@ services:
       SERVER_PORT: 8081
     ports:
       - "8081:8081"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   docs:
     image: \${IMAGE_REGISTRY}/mazevault-docs:\${IMAGE_TAG}
     restart: unless-stopped
     ports:
       - "8080:80"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     image: \${IMAGE_REGISTRY}/mazevault-frontend:\${IMAGE_TAG}
@@ -221,13 +257,18 @@ services:
       init-certs:
         condition: service_completed_successfully
       backend:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - certs:/etc/nginx/certs:ro
     environment:
       - BACKEND_HOST=backend
     ports:
       - "\${FRONTEND_PORT:-443}:443"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   certs:
