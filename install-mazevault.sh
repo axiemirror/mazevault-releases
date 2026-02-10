@@ -201,8 +201,7 @@ services:
       MAZEVAULT_JWT_KEY: ${JWT_SECRET}
       MAZEVAULT_MASTER_KEY: ${MASTER_KEY}
       MAZEVAULT_SESSION_SECRET: ${SESSION_SECRET}
-      TLS_CERT: /certs/server.crt
-      TLS_KEY: /certs/server.key
+      MAZEVAULT_TLS_CERT_PATH: /certs
       PORT: 8443
     volumes:
       - certs:/certs:ro
@@ -232,6 +231,7 @@ services:
       DB_CONNECTION: ${DATABASE_URL}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       MAZEVAULT_MASTER_KEY: ${MASTER_KEY}
+      MAZEVAULT_TLS_CERT_PATH: /certs
       SERVER_PORT: 8081
     ports:
       - "8081:8081"
