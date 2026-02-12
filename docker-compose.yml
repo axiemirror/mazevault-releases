@@ -75,16 +75,19 @@ services:
       # Redis
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       # Secrets
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
-      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY required}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET required}
+      MAZEVAULT_JWT_KEY: ${JWT_SECRET:?JWT_SECRET required}
+      MAZEVAULT_MASTER_KEY: ${MASTER_KEY:?MASTER_KEY required}
+      MAZEVAULT_SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET required}
       # TLS
-      TLS_CERT: /certs/server.crt
-      TLS_KEY: /certs/server.key
+      MAZEVAULT_TLS_CERT_PATH: /certs
       # Application
-      APP_ENV: ${APP_ENV:-production}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MAZEVAULT_ENV: ${MAZEVAULT_ENV:-production}
+      MAZEVAULT_ORCHESTRATOR_MODE: ${MAZEVAULT_ORCHESTRATOR_MODE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://localhost}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - certs:/certs:ro
       - backend_data:/app/data
@@ -98,6 +101,48 @@ services:
         limits:
           memory: ${BACKEND_MEMORY_LIMIT:-1g}
 
+  # ── OCSP Responder ───────────────────────────────────────
+  ocsp:
+    image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-ocsp:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_CONNECTION: postgres://${POSTGRES_USER:-mazevault}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mazevault}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      MAZEVAULT_MASTER_KEY: ${MASTER_KEY:?MASTER_KEY required}
+      MAZEVAULT_TLS_CERT_PATH: /certs
+      SERVER_PORT: 8081
+    volumes:
+      - certs:/certs:ro
+    ports:
+      - "${OCSP_PORT:-8081}:8081"
+    networks:
+      - internal
+      - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Documentation ────────────────────────────────────────
+  docs:
+    image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-docs:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${DOCS_PORT:-8080}:80"
+    networks:
+      - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ── Frontend (nginx + React) ─────────────────────────────
   frontend:
     image: ${IMAGE_REGISTRY:-ghcr.io/axiemirror}/mazevault-frontend:${IMAGE_TAG:-latest}
@@ -107,6 +152,10 @@ services:
         condition: service_completed_successfully
       backend:
         condition: service_started
+    environment:
+      - BACKEND_HOST=backend
+      - MAZEVAULT_DOMAIN=${MAZEVAULT_DOMAIN:-localhost}
+      - MAZEVAULT_ORCHESTRATOR_MODE=${MAZEVAULT_ORCHESTRATOR_MODE:-false}
     volumes:
       - certs:/etc/nginx/certs:ro
     ports:
