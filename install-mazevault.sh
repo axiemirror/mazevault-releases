@@ -124,7 +124,7 @@ else
     COOKIE_SECURE="false"
     FRONTEND_URL="https://localhost"
   else
-    ALLOWED_ORIGINS="https://${MAZEVAULT_DOMAIN}"
+    ALLOWED_ORIGINS="http://${MAZEVAULT_DOMAIN},https://${MAZEVAULT_DOMAIN},http://${MAZEVAULT_DOMAIN}:3000,http://${MAZEVAULT_DOMAIN}:8080"
     COOKIE_SECURE="true"
     FRONTEND_URL="https://${MAZEVAULT_DOMAIN}"
   fi
@@ -138,21 +138,32 @@ IMAGE_REGISTRY=${REGISTRY}
 IMAGE_TAG=${VERSION}
 
 # Environment
+# Local deployment flag
+#LOCAL_DEPLOYMENT=true
 MAZEVAULT_ENV=production
 MAZEVAULT_ORCHESTRATOR_MODE=${MAZEVAULT_ORCHESTRATOR_MODE}
-COOKIE_SECURE=${COOKIE_SECURE}
+GIN_MODE=release
 
 # Domain & Networking
 MAZEVAULT_DOMAIN=${MAZEVAULT_DOMAIN}
 FRONTEND_URL=${FRONTEND_URL}
-ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-CORS_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+OCSP_URL="http://ocsp-responder:8081"
+
+
+# Customer name for local production deployment
+MAZEVAULT_CUSTOMER_NAME="Customer Name"
+ # REQUIRED: Contact email (for license registration and notifications)
+MAZEVAULT_CUSTOMER_EMAIL="Customer email"
+# REQUIRED: Company ID (IČO) or VAT ID (DIČ) - at least one must be provided
+MAZEVAULT_COMPANY_ID=12345678
+# MAZEVAULT_VAT_ID=CZ12345678  # Alternative to companyId
 
 # Database
 POSTGRES_USER=mazevault
 POSTGRES_PASSWORD=$(generate_secret 32)
 POSTGRES_DB=mazevault
 DATABASE_URL=postgres://mazevault:\${POSTGRES_PASSWORD}@postgres:5432/mazevault?sslmode=disable
+RUN_MIGRATIONS=true
 
 # Redis
 REDIS_PASSWORD=$(generate_secret 24)
@@ -161,15 +172,41 @@ REDIS_PASSWORD=$(generate_secret 24)
 JWT_SECRET=$(generate_secret 48)
 MASTER_KEY=$(generate_master_key)
 SESSION_SECRET=$(generate_secret 32)
+# JWT signing key (separate from master key)
+MAZEVAULT_JWT_KEY=$(generate_secret 32)
 
 # TLS (leave empty to auto-generate self-signed)
+MAZEVAULT_TLS_ENABLED=true
 MAZEVAULT_TLS_SKIP_INIT=false
+MAZEVAULT_TLS_CERT_PATH=/certs
+COOKIE_SECURE=${COOKIE_SECURE}
+ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+CORS_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 # TLS_CERT_FILE=
 # TLS_KEY_FILE=
 
 # HTTPS port mapping
 FRONTEND_PORT=443
 BACKEND_PORT=8443
+ 
+# OPTIONAL: Unique instance identifier (auto-generated if not set)
+#MAZEVAULT_INSTANCE_ID=(uuid generate32)
+
+# OPTIONAL: Geographic region for license compliance (default: EU)
+# Options: EU, US, APAC
+MAZEVAULT_REGION=EU
+
+# MazeVault License Configuration
+# ============================================================================
+# LICENSE SERVER CONFIGURATION
+# ============================================================================
+# License server endpoints
+LICENSE_SERVER_URL=https://mazevault-license-server-811835508818.europe-west1.run.app
+# Enable license checking
+ENABLE_LICENSE_CHECK=true
+# Build Authentication Secret - SAME FOR ALL BUILDS
+# Used ONLY during initial license enrollment
+BUILD_AUTH_SECRET=admin only
 ENVEOF
   chmod 600 "${ENV_FILE}"
   ok "Generated ${ENV_FILE}"
@@ -185,6 +222,7 @@ cat > "${COMPOSE_FILE}" <<'COMPOSEEOF'
 services:
   init-certs:
     image: ${IMAGE_REGISTRY}/mazevault-init-certs:${IMAGE_TAG}
+    restart: "no"
     volumes:
       - certs:/certs
     environment:
@@ -246,33 +284,50 @@ services:
       init-certs:
         condition: service_completed_successfully
       postgres:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     environment:
+      # App settings
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      OCSP_URL: ${OCSP_URL:-http://ocsp-responder:8081}
+      MAZEVAULT_ENV: ${MAZEVAULT_ENV}
+      MAZEVAULT_ORCHESTRATOR_MODE: ${MAZEVAULT_ORCHESTRATOR_MODE}
+      FRONTEND_URL: ${FRONTEND_URL}
+      GIN_MODE: ${GIN_MODE:-release}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      #MAZEVAULT_INSTANCE_ID: ${MAZEVAULT_INSTANCE_ID}
+      #Secrets
       MAZEVAULT_JWT_KEY: ${JWT_SECRET}
       MAZEVAULT_MASTER_KEY: ${MASTER_KEY}
       MAZEVAULT_SESSION_SECRET: ${SESSION_SECRET}
-      MAZEVAULT_TLS_CERT_PATH: /certs
-      MAZEVAULT_ENV: ${MAZEVAULT_ENV}
-      MAZEVAULT_ORCHESTRATOR_MODE: ${MAZEVAULT_ORCHESTRATOR_MODE}
+      # TLS
+      MAZEVAULT_TLS_CERT_PATH: ${MAZEVAULT_TLS_CERT_PATH:-/certs}
+      PORT: ${BACKEND_PORT:-8443}
       COOKIE_SECURE: ${COOKIE_SECURE}
-      FRONTEND_URL: ${FRONTEND_URL}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      PORT: 8443
+      # Customer
+      MAZEVAULT_CUSTOMER_NAME: ${MAZEVAULT_CUSTOMER_NAME}
+      MAZEVAULT_CUSTOMER_EMAIL: ${MAZEVAULT_CUSTOMER_EMAIL}
+      MAZEVAULT_COMPANY_ID: ${MAZEVAULT_COMPANY_ID}
+      MAZEVAULT_REGION: ${MAZEVAULT_REGION:-EU}
+      #License
+      LICENSE_SERVER_URL: ${LICENSE_SERVER_URL}
+      BUILD_AUTH_SECRET: ${BUILD_AUTH_SECRET}
+      ENABLE_LICENSE_CHECK: ${ENABLE_LICENSE_CHECK:-true}
     volumes:
       - certs:/certs:ro
     ports:
       - "${BACKEND_PORT:-8443}:8443"
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost:8443/api/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 90s
     networks:
       - internal
       - frontend
@@ -331,9 +386,10 @@ services:
     volumes:
       - certs:/etc/nginx/certs:ro
     environment:
-      - BACKEND_HOST=backend
-      - MAZEVAULT_DOMAIN=${MAZEVAULT_DOMAIN}
-      - MAZEVAULT_ORCHESTRATOR_MODE=${MAZEVAULT_ORCHESTRATOR_MODE}
+      BACKEND_HOST: backend
+      MAZEVAULT_DOMAIN: ${MAZEVAULT_DOMAIN}
+      MAZEVAULT_ORCHESTRATOR_MODE: ${MAZEVAULT_ORCHESTRATOR_MODE}
+      VITE_API_URL: https://${MAZEVAULT_DOMAIN}:8443
     ports:
       - "${FRONTEND_PORT:-443}:443"
     networks:
