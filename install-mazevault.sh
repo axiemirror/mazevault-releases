@@ -206,7 +206,7 @@ LICENSE_SERVER_URL=https://mazevault-license-server-811835508818.europe-west1.ru
 ENABLE_LICENSE_CHECK=true
 # Build Authentication Secret - SAME FOR ALL BUILDS
 # Used ONLY during initial license enrollment
-BUILD_AUTH_SECRET=admin only
+BUILD_AUTH_SECRET="admin only"
 ENVEOF
   chmod 600 "${ENV_FILE}"
   ok "Generated ${ENV_FILE}"
