@@ -321,7 +321,6 @@ services:
       - certs:/certs:ro
     ports:
       - "${BACKEND_PORT:-8443}:8443"
-      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost:8443/api/v1/health"]
       interval: 10s
