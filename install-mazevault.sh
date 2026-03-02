@@ -94,6 +94,12 @@ if [[ -f "${ENV_FILE}" ]]; then
   else
     echo "IMAGE_TAG=${VERSION}" >> "${ENV_FILE}"
   fi
+
+  if grep -q "APP_VERSION=" "${ENV_FILE}"; then
+    sed -i "s|APP_VERSION=.*|APP_VERSION=${VERSION}|" "${ENV_FILE}"
+  else
+    echo "APP_VERSION=${VERSION}" >> "${ENV_FILE}"
+  fi
   
   if grep -q "IMAGE_REGISTRY=" "${ENV_FILE}"; then
     sed -i "s|IMAGE_REGISTRY=.*|IMAGE_REGISTRY=${REGISTRY}|" "${ENV_FILE}"
@@ -136,6 +142,7 @@ else
 # Image versions
 IMAGE_REGISTRY=${REGISTRY}
 IMAGE_TAG=${VERSION}
+APP_VERSION=${VERSION}
 
 # Environment
 # Local deployment flag
@@ -308,6 +315,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      OCSP_URL: http://ocsp:8081
       # Customer
       MAZEVAULT_CUSTOMER_NAME: "${MAZEVAULT_CUSTOMER_NAME}"
       MAZEVAULT_CUSTOMER_EMAIL: "${MAZEVAULT_CUSTOMER_EMAIL}"
