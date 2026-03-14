@@ -21,8 +21,9 @@ while [[ $# -gt 0 ]]; do
     --user)     GITHUB_USER="$2"; shift 2 ;;
     --token)    GITHUB_TOKEN="$2"; shift 2 ;;
     --domain)   MAZEVAULT_DOMAIN="$2"; shift 2 ;;
+    --docs-url) DOCS_URL="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: $0 [--version TAG] [--registry REGISTRY] [--dir PATH] [--user USERNAME] [--token TOKEN] [--domain DOMAIN]"
+      echo "Usage: $0 [--version TAG] [--registry REGISTRY] [--dir PATH] [--user USERNAME] [--token TOKEN] [--domain DOMAIN] [--docs-url URL]"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -196,6 +197,7 @@ CORS_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 FRONTEND_PORT=443
 BACKEND_PORT=8443
 DOCS_PORT=8088
+DOCS_URL="${DOCS_URL:-https://${MAZEVAULT_DOMAIN}:8088}"
  
 # OPTIONAL: Unique instance identifier (auto-generated if not set)
 #MAZEVAULT_INSTANCE_ID=(uuid generate32)
@@ -215,6 +217,13 @@ ENABLE_LICENSE_CHECK=true
 # Build Authentication Secret - SAME FOR ALL BUILDS
 # Used ONLY during initial license enrollment
 BUILD_AUTH_SECRET="admin only"
+
+# SMTP / Email Notifications (optional — configure for email alerts)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=
 ENVEOF
   chmod 600 "${ENV_FILE}"
   ok "Generated ${ENV_FILE}"
@@ -310,6 +319,12 @@ services:
       GIN_MODE: ${GIN_MODE:-release}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # SMTP / Email Notifications
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       # Customer
       MAZEVAULT_CUSTOMER_NAME: "${MAZEVAULT_CUSTOMER_NAME}"
       MAZEVAULT_CUSTOMER_EMAIL: "${MAZEVAULT_CUSTOMER_EMAIL}"
