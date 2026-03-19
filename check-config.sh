@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# MazeVault — Configuration Drift Checker
+# Compares installed .env + docker-compose.yml against the reference
+# templates from install-mazevault.sh and reports missing keys,
+# services, volume mounts, dependencies and port mappings.
+#
+# Usage: sudo ./check-config.sh [--dir /opt/mazevault]
+# ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+INSTALL_DIR="/opt/mazevault"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir) INSTALL_DIR="$2"; shift 2 ;;
+    --help|-h) echo "Usage: $0 [--dir /opt/mazevault]"; exit 0 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+# ── Colours ─────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; CYN='\033[0;36m'
+BLD='\033[1m'; DIM='\033[2m'; RST='\033[0m'
+
+ok()   { echo -e "  ${GRN}✔${RST} $*"; }
+miss() { echo -e "  ${RED}✘${RST} $*"; ISSUES=$((ISSUES+1)); }
+warn() { echo -e "  ${YLW}⚠${RST} $*"; }
+hdr()  { echo -e "\n${BLD}${CYN}── $* ──${RST}"; }
+
+ISSUES=0
+
+# ── Validate ────────────────────────────────────────────────────────────────
+ENV_FILE="${INSTALL_DIR}/.env"
+COMPOSE="${INSTALL_DIR}/docker-compose.yml"
+[[ -f "${ENV_FILE}" ]]  || { echo -e "${RED}ERR${RST} ${ENV_FILE} not found";  exit 1; }
+[[ -f "${COMPOSE}" ]]   || { echo -e "${RED}ERR${RST} ${COMPOSE} not found";   exit 1; }
+
+# Read installed version
+INSTALLED_TAG=$(grep -oP '^IMAGE_TAG=\K.*' "${ENV_FILE}" 2>/dev/null || echo "?")
+echo -e "${BLD}MazeVault Config Check${RST}  ${DIM}${INSTALL_DIR}  IMAGE_TAG=${INSTALLED_TAG}${RST}"
+
+# ── Helper: extract compose block for a service ─────────────────────────────
+# Prints lines from "  <svc>:" until next top-level service or section
+svc_block() {
+  awk -v svc="  ${1}:" '
+    $0 == svc || $0 ~ "^"svc"$" || $0 ~ "^  "$1":$" { found=1; next }
+    found && /^  [a-z]/ { exit }
+    found && /^[a-z]|^volumes:|^networks:/ { exit }
+    found { print }
+  ' "${COMPOSE}"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 1. .env keys
+# ═════════════════════════════════════════════════════════════════════════════
+hdr ".env keys"
+
+REF_ENV_KEYS=(
+  IMAGE_REGISTRY IMAGE_TAG APP_VERSION
+  MAZEVAULT_ENV MAZEVAULT_ORCHESTRATOR_MODE GIN_MODE
+  MAZEVAULT_DOMAIN FRONTEND_URL OCSP_URL
+  MAZEVAULT_CUSTOMER_NAME MAZEVAULT_CUSTOMER_EMAIL MAZEVAULT_COMPANY_ID
+  POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DATABASE_URL RUN_MIGRATIONS
+  REDIS_PASSWORD
+  JWT_SECRET MASTER_KEY SESSION_SECRET MAZEVAULT_JWT_KEY
+  MAZEVAULT_TLS_ENABLED MAZEVAULT_TLS_SKIP_INIT MAZEVAULT_TLS_CERT_PATH
+  COOKIE_SECURE ALLOWED_ORIGINS CORS_ALLOWED_ORIGINS
+  FRONTEND_PORT BACKEND_PORT DOCS_PORT DOCS_URL
+  MAZEVAULT_REGION
+  LICENSE_SERVER_URL ENABLE_LICENSE_CHECK BUILD_AUTH_SECRET
+  SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM
+)
+
+env_ok=0; env_miss=0
+for k in "${REF_ENV_KEYS[@]}"; do
+  if grep -q "^${k}=" "${ENV_FILE}" 2>/dev/null; then
+    env_ok=$((env_ok+1))
+  else
+    miss "${k}"
+    env_miss=$((env_miss+1))
+  fi
+done
+if [[ ${env_miss} -eq 0 ]]; then
+  ok "All ${env_ok} keys present"
+else
+  echo -e "  ${DIM}${env_ok} ok, ${RED}${env_miss} missing${RST}"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 2. Compose services
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Services"
+
+REF_SERVICES=(init-certs postgres redis backend ocsp docs frontend)
+for s in "${REF_SERVICES[@]}"; do
+  if grep -qE "^  ${s}:" "${COMPOSE}"; then
+    ok "${s}"
+  else
+    miss "${s}  ${DIM}service missing${RST}"
+  fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 3. Certificate volume mounts
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Cert volumes"
+
+declare -A CERT_EXPECT=(
+  [backend]="certs:/certs"
+  [ocsp]="certs:/certs"
+  [docs]="certs:/etc/nginx/certs"
+  [frontend]="certs:/etc/nginx/certs"
+)
+for s in backend ocsp docs frontend; do
+  pat="${CERT_EXPECT[$s]}"
+  if svc_block "$s" | grep -q "${pat}"; then
+    ok "${s} → ${pat}"
+  else
+    miss "${s} → ${pat}  ${DIM}not mounted${RST}"
+  fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4. depends_on init-certs
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "init-certs dependency"
+
+for s in backend docs frontend; do
+  if svc_block "$s" | grep -q "init-certs"; then
+    ok "${s}"
+  else
+    miss "${s}  ${DIM}missing depends_on init-certs${RST}"
+  fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5. Port mappings (container-side)
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Ports"
+
+declare -A PORT_EXPECT=(
+  [backend]=8443
+  [ocsp]=8081
+  [docs]=443
+  [frontend]=443
+)
+for s in backend ocsp docs frontend; do
+  cp="${PORT_EXPECT[$s]}"
+  if svc_block "$s" | grep -qE ":${cp}\"?\s*$"; then
+    ok "${s} → :${cp}"
+  else
+    miss "${s} → expected container port ${cp}"
+  fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 6. Backend env vars in compose
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Backend env"
+
+REF_BE_VARS=(
+  DATABASE_URL REDIS_URL
+  MAZEVAULT_JWT_KEY MAZEVAULT_MASTER_KEY MAZEVAULT_SESSION_SECRET MAZEVAULT_TLS_CERT_PATH
+  MAZEVAULT_ENV MAZEVAULT_ORCHESTRATOR_MODE APP_VERSION
+  COOKIE_SECURE FRONTEND_URL ALLOWED_ORIGINS CORS_ALLOWED_ORIGINS OCSP_URL
+  GIN_MODE RUN_MIGRATIONS LOG_LEVEL
+  SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM
+  MAZEVAULT_CUSTOMER_NAME MAZEVAULT_CUSTOMER_EMAIL MAZEVAULT_COMPANY_ID MAZEVAULT_REGION
+  LICENSE_SERVER_URL BUILD_AUTH_SECRET ENABLE_LICENSE_CHECK
+)
+
+BE_BLOCK=$(svc_block backend)
+be_ok=0; be_miss=0
+for v in "${REF_BE_VARS[@]}"; do
+  if echo "${BE_BLOCK}" | grep -q "${v}"; then
+    be_ok=$((be_ok+1))
+  else
+    miss "${v}"
+    be_miss=$((be_miss+1))
+  fi
+done
+if [[ ${be_miss} -eq 0 ]]; then
+  ok "All ${be_ok} vars present"
+else
+  echo -e "  ${DIM}${be_ok} ok, ${RED}${be_miss} missing${RST}"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 7. Volumes & networks
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Volumes & networks"
+
+for v in certs pgdata backend_data; do
+  if grep -qE "^  ${v}:" "${COMPOSE}"; then ok "vol ${v}"; else miss "vol ${v}"; fi
+done
+for n in internal frontend; do
+  if grep -qE "^  ${n}:" "${COMPOSE}"; then ok "net ${n}"; else miss "net ${n}"; fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 8. Healthchecks
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Healthchecks"
+
+for s in postgres redis backend docs; do
+  if svc_block "$s" | grep -q "healthcheck"; then
+    ok "${s}"
+  else
+    warn "${s}  ${DIM}no healthcheck${RST}"
+  fi
+done
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Summary
+# ═════════════════════════════════════════════════════════════════════════════
+echo ""
+echo -e "${BLD}═══════════════════════════════════════════════════════════${RST}"
+if [[ ${ISSUES} -eq 0 ]]; then
+  echo -e "  ${GRN}✔ Config matches reference — no drift detected${RST}"
+else
+  echo -e "  ${RED}✘ ${ISSUES} issue(s) found${RST} — review items above"
+  echo -e "  ${DIM}Fix: re-run install-mazevault.sh or apply missing values manually${RST}"
+fi
+echo -e "${BLD}═══════════════════════════════════════════════════════════${RST}"
+
+exit ${ISSUES}
