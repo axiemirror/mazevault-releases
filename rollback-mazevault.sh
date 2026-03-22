@@ -55,7 +55,7 @@ info "Backup source: ${BACKUP_PATH}"
 # ── Step 1: Stop services ──────────────────────────────────────────────────
 cd "${INSTALL_DIR}"
 info "Stopping services..."
-${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" down || warn "Services may already be stopped"
+${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" stop || warn "Services may already be stopped"
 
 # ── Step 2: Restore configuration ──────────────────────────────────────────
 info "Restoring .env..."
@@ -80,9 +80,20 @@ set -a; source "${INSTALL_DIR}/.env"; set +a
 if [[ "${SKIP_DB:-false}" != "true" ]] && [[ -f "${BACKUP_PATH}/db_backup.sql.gz" ]]; then
   info "Restoring database (this will DROP and recreate)..."
 
+
   # Start only postgres
   ${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" up -d postgres
-  sleep 5  # wait for postgres to be ready
+
+  # Wait for postgres to be healthy (max 30 attempts, 2s interval)
+  TRIES=0; MAX=30
+  until ${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" exec -T postgres pg_isready -U "${POSTGRES_USER}" 2>/dev/null | grep -q "accepting connections"; do
+    TRIES=$((TRIES+1))
+    if [[ $TRIES -ge $MAX ]]; then
+      die "Postgres did not become healthy in time. Check logs."
+    fi
+    sleep 2
+  done
+  ok "Postgres is healthy."
 
   # Drop and restore
   ${COMPOSE_CMD} -p "${COMPOSE_PROJECT}" exec -T postgres \

@@ -31,6 +31,64 @@ hdr()  { echo -e "\n${BLD}${CYN}── $* ──${RST}"; }
 ISSUES=0
 
 # ── Validate ────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# 0. Systemd & Docker Daemon Validation
+# ═════════════════════════════════════════════════════════════════════════════
+hdr "Systemd & Docker Daemon"
+
+# Check systemd service
+if systemctl list-unit-files | grep -q '^mazevault.service'; then
+  if systemctl is-enabled mazevault &>/dev/null; then
+    ok "mazevault.service is enabled"
+  else
+    miss "mazevault.service exists but is not enabled"
+  fi
+else
+  miss "mazevault.service does not exist"
+fi
+
+# Check Docker daemon
+if systemctl list-unit-files | grep -q '^docker.service'; then
+  if systemctl is-enabled docker &>/dev/null; then
+    ok "docker.service is enabled"
+  else
+    miss "docker.service exists but is not enabled"
+  fi
+  if systemctl is-active docker &>/dev/null; then
+    ok "docker.service is running"
+  else
+    miss "docker.service is not running"
+  fi
+else
+  miss "docker.service does not exist"
+fi
+
+# Check restart policies in compose
+hdr "Restart policies"
+RESTART_OK=0; RESTART_MISS=0
+for s in init-certs postgres redis backend ocsp docs frontend; do
+  if grep -A 5 "^  ${s}:" "${COMPOSE}" | grep -q 'restart:'; then
+    policy=$(grep -A 5 "^  ${s}:" "${COMPOSE}" | grep 'restart:' | awk '{print $2}')
+    if [[ "$s" == "init-certs" && "$policy" == "no" ]]; then
+      ok "${s}: restart: no"
+      RESTART_OK=$((RESTART_OK+1))
+    elif [[ "$s" != "init-certs" && "$policy" == "unless-stopped" ]]; then
+      ok "${s}: restart: unless-stopped"
+      RESTART_OK=$((RESTART_OK+1))
+    else
+      miss "${s}: restart policy is $policy (should be 'unless-stopped' or 'no')"
+      RESTART_MISS=$((RESTART_MISS+1))
+    fi
+  else
+    miss "${s}: missing restart policy"
+    RESTART_MISS=$((RESTART_MISS+1))
+  fi
+done
+if [[ $RESTART_MISS -eq 0 ]]; then
+  ok "All restart policies correct"
+else
+  echo -e "  ${DIM}${RESTART_OK} ok, ${RED}${RESTART_MISS} missing/incorrect${RST}"
+fi
 ENV_FILE="${INSTALL_DIR}/.env"
 COMPOSE="${INSTALL_DIR}/docker-compose.yml"
 [[ -f "${ENV_FILE}" ]]  || { echo -e "${RED}ERR${RST} ${ENV_FILE} not found";  exit 1; }

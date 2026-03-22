@@ -37,6 +37,7 @@ warn()  { echo -e "${YLW}[WARN]${RST}  $*"; }
 die()   { echo -e "${RED}[ERR]${RST}   $*" >&2; exit 1; }
 
 # ── Pre-flight ──────────────────────────────────────────────────────────────
+
 info "MazeVault Online Installer — version ${VERSION}"
 
 # Check root
@@ -53,6 +54,11 @@ if command -v docker &>/dev/null; then
       die "docker compose plugin or docker-compose not found."
     fi
   fi
+  # Phase 2 step 3: Ensure Docker is enabled at boot
+  if ! systemctl is-enabled docker &>/dev/null; then
+    info "Enabling Docker service to start on boot..."
+    systemctl enable --now docker || die "Failed to enable Docker service."
+  fi
 elif command -v podman &>/dev/null; then
   RUNTIME="podman"
   COMPOSE_CMD="podman-compose"
@@ -61,6 +67,34 @@ else
   die "Neither docker nor podman found. Please install a container runtime first."
 fi
 ok "Container runtime: ${RUNTIME} (${COMPOSE_CMD})"
+
+# Phase 2 step 4: Generate systemd service for MazeVault
+SYSTEMD_SERVICE="/etc/systemd/system/mazevault.service"
+if [[ ! -f "${SYSTEMD_SERVICE}" ]]; then
+  info "Generating systemd service: ${SYSTEMD_SERVICE}"
+  cat > "${SYSTEMD_SERVICE}" <<EOF
+[Unit]
+Description=MazeVault Enterprise Secrets Manager
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${COMPOSE_CMD} up -d
+ExecStop=${COMPOSE_CMD} down
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable mazevault
+  ok "Systemd service created and enabled."
+else
+  info "Systemd service already exists: ${SYSTEMD_SERVICE}"
+fi
 
 # ── Create directory structure ──────────────────────────────────────────────
 info "Creating install directory: ${INSTALL_DIR}"
