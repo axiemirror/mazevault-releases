@@ -96,6 +96,19 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Entra ID / SSO (optional)
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-}
+      ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
+      # Azure AD Token Validation (optional)
+      AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID:-}
+      AZURE_AD_ALLOWED_TENANTS: ${AZURE_AD_ALLOWED_TENANTS:-}
+      AZURE_AD_JWKS_CACHE_TTL: ${AZURE_AD_JWKS_CACHE_TTL:-86400}
+      # Azure Managed Identity (optional)
+      AZURE_MANAGED_IDENTITY_CLIENT_ID: ${AZURE_MANAGED_IDENTITY_CLIENT_ID:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_DEPLOYMENT: ${AZURE_DEPLOYMENT:-false}
     volumes:
       - certs:/certs:ro
       - backend_data:/app/data

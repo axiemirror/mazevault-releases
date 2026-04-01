@@ -26,6 +26,7 @@ BLD='\033[1m'; DIM='\033[2m'; RST='\033[0m'
 ok()   { echo -e "  ${GRN}✔${RST} $*"; }
 miss() { echo -e "  ${RED}✘${RST} $*"; ISSUES=$((ISSUES+1)); }
 warn() { echo -e "  ${YLW}⚠${RST} $*"; }
+info() { echo -e "  ${CYN}ℹ${RST} $*"; }
 hdr()  { echo -e "\n${BLD}${CYN}── $* ──${RST}"; }
 
 ISSUES=0
@@ -130,6 +131,13 @@ REF_ENV_KEYS=(
   SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM
 )
 
+# Optional keys — reported as info, not errors
+OPTIONAL_ENV_KEYS=(
+  ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET ENTRA_TENANT_ID ENTRA_REDIRECT_URI
+  AZURE_AD_TENANT_ID AZURE_AD_ALLOWED_TENANTS AZURE_AD_JWKS_CACHE_TTL
+  AZURE_MANAGED_IDENTITY_CLIENT_ID AZURE_TENANT_ID AZURE_DEPLOYMENT
+)
+
 env_ok=0; env_miss=0
 for k in "${REF_ENV_KEYS[@]}"; do
   if grep -q "^${k}=" "${ENV_FILE}" 2>/dev/null; then
@@ -139,10 +147,24 @@ for k in "${REF_ENV_KEYS[@]}"; do
     env_miss=$((env_miss+1))
   fi
 done
+
+env_opt=0; env_opt_miss=0
+for k in "${OPTIONAL_ENV_KEYS[@]}"; do
+  if grep -q "^${k}=" "${ENV_FILE}" 2>/dev/null || grep -q "^# *${k}=" "${ENV_FILE}" 2>/dev/null; then
+    env_opt=$((env_opt+1))
+  else
+    info "${k} (optional — not configured)"
+    env_opt_miss=$((env_opt_miss+1))
+  fi
+done
+
 if [[ ${env_miss} -eq 0 ]]; then
-  ok "All ${env_ok} keys present"
+  ok "All ${env_ok} required keys present"
 else
   echo -e "  ${DIM}${env_ok} ok, ${RED}${env_miss} missing${RST}"
+fi
+if [[ ${env_opt_miss} -gt 0 ]]; then
+  echo -e "  ${DIM}${env_opt} optional configured, ${CYN}${env_opt_miss} not set${RST}"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
