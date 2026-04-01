@@ -259,6 +259,19 @@ SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_FROM=
 
+# Office365 OAuth2 Email (optional — takes priority over SMTP)
+# Enable Office365 email sending via Microsoft Graph API (OAuth2)
+# Requires Azure AD App Registration with Mail.Send application permission
+# O365_EMAIL_ENABLED=true
+# O365_TENANT_ID=
+# O365_CLIENT_ID=
+# O365_CLIENT_SECRET=
+# O365_SENDER_EMAIL=
+# O365_AUTH_METHOD=client_secret
+# O365_CERTIFICATE_PATH=
+# O365_CERTIFICATE_PASSWORD=
+# O365_MANAGED_IDENTITY_CLIENT_ID=
+
 # Entra ID / SSO (optional — enable for Azure AD login)
 # ENTRA_CLIENT_ID=
 # ENTRA_CLIENT_SECRET=
@@ -375,6 +388,16 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Office365 OAuth2 Email (optional — takes priority over SMTP)
+      O365_EMAIL_ENABLED: ${O365_EMAIL_ENABLED:-false}
+      O365_TENANT_ID: ${O365_TENANT_ID:-}
+      O365_CLIENT_ID: ${O365_CLIENT_ID:-}
+      O365_CLIENT_SECRET: ${O365_CLIENT_SECRET:-}
+      O365_SENDER_EMAIL: ${O365_SENDER_EMAIL:-}
+      O365_AUTH_METHOD: ${O365_AUTH_METHOD:-client_secret}
+      O365_CERTIFICATE_PATH: ${O365_CERTIFICATE_PATH:-}
+      O365_CERTIFICATE_PASSWORD: ${O365_CERTIFICATE_PASSWORD:-}
+      O365_MANAGED_IDENTITY_CLIENT_ID: ${O365_MANAGED_IDENTITY_CLIENT_ID:-}
       # Entra ID / SSO (optional)
       ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
       ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
