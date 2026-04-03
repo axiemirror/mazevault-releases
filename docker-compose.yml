@@ -88,6 +88,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://localhost}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
       OCSP_URL: http://ocsp:8081
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # SMTP / Email Notifications
