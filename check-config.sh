@@ -64,12 +64,19 @@ else
   miss "docker.service does not exist"
 fi
 
+# Paths used by all subsequent checks
+ENV_FILE="${INSTALL_DIR}/.env"
+COMPOSE="${INSTALL_DIR}/docker-compose.yml"
+
 # Check restart policies in compose
 hdr "Restart policies"
 RESTART_OK=0; RESTART_MISS=0
+if [[ ! -f "${COMPOSE}" ]]; then
+  miss "docker-compose.yml not found at ${COMPOSE} — skipping restart policy check"
+else
 for s in init-certs postgres redis backend ocsp docs frontend; do
-  if grep -A 5 "^  ${s}:" "${COMPOSE}" | grep -q 'restart:'; then
-    policy=$(grep -A 5 "^  ${s}:" "${COMPOSE}" | grep 'restart:' | awk '{print $2}')
+  if grep -A 10 "^  ${s}:" "${COMPOSE}" | grep -q 'restart:'; then
+    policy=$(grep -A 10 "^  ${s}:" "${COMPOSE}" | grep 'restart:' | head -1 | awk '{print $2}' | tr -d '"')
     if [[ "$s" == "init-certs" && "$policy" == "no" ]]; then
       ok "${s}: restart: no"
       RESTART_OK=$((RESTART_OK+1))
@@ -85,13 +92,12 @@ for s in init-certs postgres redis backend ocsp docs frontend; do
     RESTART_MISS=$((RESTART_MISS+1))
   fi
 done
+fi
 if [[ $RESTART_MISS -eq 0 ]]; then
   ok "All restart policies correct"
 else
   echo -e "  ${DIM}${RESTART_OK} ok, ${RED}${RESTART_MISS} missing/incorrect${RST}"
 fi
-ENV_FILE="${INSTALL_DIR}/.env"
-COMPOSE="${INSTALL_DIR}/docker-compose.yml"
 [[ -f "${ENV_FILE}" ]]  || { echo -e "${RED}ERR${RST} ${ENV_FILE} not found";  exit 1; }
 [[ -f "${COMPOSE}" ]]   || { echo -e "${RED}ERR${RST} ${COMPOSE} not found";   exit 1; }
 
@@ -144,9 +150,11 @@ OPTIONAL_ENV_KEYS=(
   AGENT_ROLLOUT_PERCENTAGE AGENT_MAX_CONCURRENT_DOWNLOADS
   AGENT_DOWNLOAD_BASE_URL AGENT_VERSION
   MAZEVAULT_MODE PRIMARY_BACKEND_URL GATEWAY_BOOTSTRAP_TOKEN GATEWAY_NAME
-  MAZEVAULT_GATEWAY_ENVIRONMENT MAZEVAULT_GATEWAY_ROLE MAZEVAULT_GATEWAY_STATE_FILE MAZEVAULT_VERSION
+  MAZEVAULT_GATEWAY_ENVIRONMENT MAZEVAULT_GATEWAY_ENVIRONMENTS MAZEVAULT_GATEWAY_ROLE MAZEVAULT_GATEWAY_STATE_FILE MAZEVAULT_VERSION
+  MAZEVAULT_PRIMARY_ENVIRONMENTS
   MAZEVAULT_AGENT_INSTALL_CHAIN_TO_TRUSTSTORE MAZEVAULT_AGENT_TRUST_STORE_PATH
   MAZEVAULT_ACME_DNS_PROVIDER MAZEVAULT_ACME_DNS_API_TOKEN
+  MAZEVAULT_KEYTAB_ENABLED MAZEVAULT_KEYTAB_MAX_SIZE_MB MAZEVAULT_KEYTAB_DEFAULT_EXPIRY_DAYS
 )
 
 env_ok=0; env_miss=0
@@ -265,8 +273,10 @@ REF_BE_VARS=(
   AGENT_ROLLOUT_PERCENTAGE AGENT_MAX_CONCURRENT_DOWNLOADS
   AGENT_DOWNLOAD_BASE_URL AGENT_VERSION
   MAZEVAULT_MODE PRIMARY_BACKEND_URL GATEWAY_BOOTSTRAP_TOKEN GATEWAY_NAME
-  MAZEVAULT_GATEWAY_ENVIRONMENT MAZEVAULT_GATEWAY_ROLE MAZEVAULT_GATEWAY_STATE_FILE MAZEVAULT_VERSION
+  MAZEVAULT_GATEWAY_ENVIRONMENT MAZEVAULT_GATEWAY_ENVIRONMENTS MAZEVAULT_GATEWAY_ROLE MAZEVAULT_GATEWAY_STATE_FILE MAZEVAULT_VERSION
+  MAZEVAULT_PRIMARY_ENVIRONMENTS
   MAZEVAULT_ACME_DNS_PROVIDER MAZEVAULT_ACME_DNS_API_TOKEN
+  MAZEVAULT_KEYTAB_ENABLED MAZEVAULT_KEYTAB_MAX_SIZE_MB MAZEVAULT_KEYTAB_DEFAULT_EXPIRY_DAYS
 )
 
 BE_BLOCK=$(svc_block backend)
